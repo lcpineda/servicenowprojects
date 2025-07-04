@@ -16,3 +16,33 @@ targetGr.install_date = source.u_install_date;
 targetGr.insert();
 
 //Este script usa el valor u_ci_class (que contiene el nombre de la tabla de destino como texto) para crear el registro en la clase correcta.
+
+
+
+
+(function transformRow(source, target, map, log, isUpdate) {
+    // Asegurarse de que la clase esté definida
+    if (!source.u_ci_class) {
+        log.warning('No se especificó la clase CI para el registro: ' + source.u_name);
+        return;
+    }
+
+    var ci = new GlideRecord(source.u_ci_class);
+    if (!ci.isValid()) {
+        log.warning('Clase de CI no válida: ' + source.u_ci_class);
+        return;
+    }
+
+    ci.initialize();
+
+    // Asignar valores comunes
+    ci.setValue('name', source.u_name);
+    if (ci.isValidField('ip_address'))
+        ci.setValue('ip_address', source.u_ip_address);
+    if (ci.isValidField('install_date'))
+        ci.setValue('install_date', source.u_install_date);
+
+    // Puedes agregar más campos condicionalmente si existen en la clase
+
+    ci.insert();
+})(source, target, map, log, action === "update");
