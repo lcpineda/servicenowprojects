@@ -1,0 +1,18 @@
+//Importa el Excel a una tabla de staging (por ejemplo, u_import_ci_data).
+
+//Asegúrate de que el Excel tenga una columna como ci_class que indique la clase del CI (por ejemplo: cmdb_ci_server, cmdb_ci_database, etc.).
+
+//Crea un Transform Map sin tabla destino fija, y en el script de transformación usa algo como:
+
+var targetGr = new GlideRecord(transform.source.u_ci_class);
+targetGr.initialize();
+
+// Copia los datos comunes
+targetGr.name = source.u_name;
+targetGr.ip_address = source.u_ip;
+targetGr.install_date = source.u_install_date;
+// Otros campos...
+
+targetGr.insert();
+
+//Este script usa el valor u_ci_class (que contiene el nombre de la tabla de destino como texto) para crear el registro en la clase correcta.
