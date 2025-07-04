@@ -1,0 +1,36 @@
+Ve a System Definition > Business Rules
+
+Clic en New
+
+Configura lo siguiente:
+
+Campo	Valor
+Name	Bloqueo por blackout
+Table	Change Request (change_request)
+When	Before
+Insert	✅
+Update	✅
+Advanced	✅
+
+En el script usa lo siguiente (ejemplo):
+
+
+(function executeRule(current, gSNC, gs) {
+
+  var blackoutGR = new GlideRecord('cmn_schedule_span');
+  blackoutGR.addQuery('schedule.name', 'Calendario Fin de Año'); // Usa el nombre del calendario
+  blackoutGR.query();
+
+  while (blackoutGR.next()) {
+    var start = new GlideDateTime(blackoutGR.start_date_time);
+    var end = new GlideDateTime(blackoutGR.end_date_time);
+
+    var changeStart = new GlideDateTime(current.start_date);
+
+    if (changeStart.compareTo(start) >= 0 && changeStart.compareTo(end) <= 0) {
+      gs.addErrorMessage('No se puede agendar un cambio en el periodo de blackout definido.');
+      current.setAbortAction(true);
+    }
+  }
+
+})(current, gSNC, gs);
