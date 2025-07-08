@@ -1,0 +1,64 @@
+var ExternalDataLoader = Class.create();
+ExternalDataLoader.prototype = {
+  initialize: function() {},
+
+  loadData: function() {
+    try {
+      var r = new sn_ws.RESTMessageV2('ExternalAPIData', 'get');
+      var response = r.execute();
+      var responseBody = response.getBody();
+      var data = JSON.parse(responseBody);
+
+      data.forEach(function(item) {
+        // 🔁 Convertir timestamp a GlideDateTime en GMT-5
+        var timestampMs = item.fecha_unix; // ejemplo: 1751981700000
+        var utcGdt = new GlideDateTime();
+        utcGdt.setNumericValue(timestampMs);
+
+        var gmt5OffsetMs = 5 * 60 * 60 * 1000;
+        var gdtGmt5 = new GlideDateTime();
+        gdtGmt5.setNumericValue(utcGdt.getNumericValue() - gmt5OffsetMs);
+
+        // Formato legible: yyyy-MM-dd HH:mm:ss
+        var gdtStr = gdtGmt5.getLocalDate().toString() + " " + gdtGmt5.getLocalTime().getByFormat("HH:mm:ss");
+
+        // ✅ Verificar si ya existe el registro con misma categoría y fecha
+        var existing = new GlideRecord('u_external_data');
+        existing.addQuery('u_categoria', item.categoria);
+        existing.addQuery('u_fecha', gdtGmt5);
+        existing.query();
+
+        if (!existing.hasNext()) {
+          // Si no existe, insertar
+          var gr = new GlideRecord('u_external_data');
+          gr.initialize();
+          gr.u_categoria = item.categoria;
+          gr.u_cantidad = item.cantidad;
+          gr.u_fecha = gdtGmt5;
+          gr.u_fecha_legible = gdtStr;
+          gr.insert();
+          gs.info("Insertado: " + item.categoria + " - " + gdtStr);
+        } else {
+          gs.info("Ya existe: " + item.categoria + " - " + gdtStr);
+        }
+      });
+
+    } catch (ex) {
+      gs.error("Error cargando datos: " + ex.message);
+    }
+  },
+
+  type: 'ExternalDataLoader'
+};
+
+
+
+
+
+| Campo             | Tipo      | Descripción                         |
+| ----------------- | --------- | ----------------------------------- |
+| `u_categoria`     | String    | Categoría o tipo de dato            |
+| `u_cantidad`      | Integer   | Cantidad numérica                   |
+| `u_fecha`         | Date/Time | Fecha convertida a GMT-5            |
+| `u_fecha_legible` | String    | Fecha en texto con formato completo |
+
