@@ -61,4 +61,5 @@ ExternalDataLoader.prototype = {
 | `u_cantidad`      | Integer   | Cantidad numérica                   |
 | `u_fecha`         | Date/Time | Fecha convertida a GMT-5            |
 | `u_fecha_legible` | String    | Fecha en texto con formato completo |
+jh
 
