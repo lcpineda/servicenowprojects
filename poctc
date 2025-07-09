@@ -108,3 +108,34 @@ ExternalDataLoader.prototype = {
 
   type: 'ExternalDataLoader'
 };
+
+
+
+----------------
+
+var responseBody = response.getBody();
+var data = JSON.parse(responseBody);
+
+var values = data.values;
+var timestamps = data.timestamps;
+
+for (var i = 0; i < values.length; i++) {
+  var item = values[i];
+  var timestampMs = timestamps[i];
+
+  // Convertir timestamp a GlideDateTime en GMT-5
+  var gdtUTC = new GlideDateTime();
+  gdtUTC.setNumericValue(timestampMs);
+
+  var offset = 5 * 60 * 60 * 1000;
+  var gdtGMT5 = new GlideDateTime();
+  gdtGMT5.setNumericValue(gdtUTC.getNumericValue() - offset);
+
+  // Insertar en tabla
+  var gr = new GlideRecord('u_tu_tabla');
+  gr.initialize();
+  gr.u_categoria = item.categoria;
+  gr.u_cantidad = item.cantidad;
+  gr.u_fecha = gdtGMT5;
+  gr.insert();
+} 
