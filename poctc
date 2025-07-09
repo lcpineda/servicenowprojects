@@ -139,3 +139,62 @@ for (var i = 0; i < values.length; i++) {
   gr.u_fecha = gdtGMT5;
   gr.insert();
 } 
+
+
+----------------------
+
+// Simulación de responseBody real
+var responseBody = JSON.stringify({
+  result: [
+    {
+      data: [
+        {
+          timestamps: [
+            1751988680000,
+            1751988740000,
+            1751988800000
+          ],
+          values: [5, 8, 4]
+        }
+      ]
+    }
+  ]
+});
+
+// Parsear el JSON
+var data = JSON.parse(responseBody);
+
+// Acceder a los arreglos internos
+var timestamps = data.result[0].data[0].timestamps;
+var values = data.result[0].data[0].values;
+
+// Validar que tienen igual longitud
+if (timestamps.length !== values.length) {
+  gs.error("❌ Los arreglos timestamps y values no tienen el mismo tamaño.");
+} else {
+  for (var i = 0; i < timestamps.length; i++) {
+    var timestampMs = timestamps[i];
+    var cantidad = values[i];
+
+    // Convertir timestamp a GlideDateTime en GMT-5
+    var gdtUTC = new GlideDateTime();
+    gdtUTC.setNumericValue(timestampMs);
+
+    var offset = 5 * 60 * 60 * 1000;
+    var gdtGMT5 = new GlideDateTime();
+    gdtGMT5.setNumericValue(gdtUTC.getNumericValue() - offset);
+
+    var legible = gdtGMT5.getLocalDate().toString() + " " + gdtGMT5.getLocalTime().getByFormat("HH:mm:ss");
+
+    // Insertar en tabla personalizada
+    var gr = new GlideRecord('u_external_data'); // Asegúrate que esta es tu tabla
+    gr.initialize();
+    gr.u_categoria = "superapp_ios"; // nombre descriptivo para agrupar, opcional
+    gr.u_cantidad = cantidad;
+    gr.u_fecha = gdtGMT5;
+    gr.u_fecha_legible = legible;
+    gr.insert();
+
+    gs.info("✔ Insertado: " + legible + " - cantidad: " + cantidad);
+  }
+} 
