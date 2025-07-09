@@ -63,3 +63,48 @@ ExternalDataLoader.prototype = {
 | `u_fecha_legible` | String    | Fecha en texto con formato completo |
 jh
 
+
+var ExternalDataLoader = Class.create();
+ExternalDataLoader.prototype = {
+  initialize: function() {},
+
+  loadData: function() {
+    try {
+      var r = new sn_ws.RESTMessageV2('ExternalAPIData', 'get');
+      var response = r.execute();
+      var responseBody = response.getBody();
+      var data = JSON.parse(responseBody);
+
+      data.forEach(function(item) {
+        var gr = new GlideRecord('u_external_data');
+        gr.initialize();
+        gr.u_categoria = item.categoria;
+        gr.u_cantidad = item.cantidad;
+
+        // 🕒 Convertir timestamp a GlideDateTime en GMT-5
+        var timestampMs = item.fecha_unix; // ejemplo: 1751981700000
+        var utcGdt = new GlideDateTime();
+        utcGdt.setNumericValue(timestampMs);
+
+        // 🕔 Ajuste manual a GMT-5 (restamos 5 horas en milisegundos)
+        var gmt5OffsetMs = 5 * 60 * 60 * 1000;
+        var gdtGmt5 = new GlideDateTime();
+        gdtGmt5.setNumericValue(utcGdt.getNumericValue() - gmt5OffsetMs);
+
+        // 🧾 Formato personalizado: yyyy-MM-dd HH:mm:ss
+        var gdtStr = gdtGmt5.getLocalDate().toString() + " " + gdtGmt5.getLocalTime().getByFormat("HH:mm:ss");
+
+        gr.u_fecha = gdtGmt5;
+        gr.u_fecha_legible = gdtStr; // Asegúrate de tener este campo tipo String
+        gr.insert();
+      });
+
+      gs.info("Datos insertados con fechas ajustadas y formateadas");
+
+    } catch (ex) {
+      gs.error("Error cargando datos: " + ex.message);
+    }
+  },
+
+  type: 'ExternalDataLoader'
+};
