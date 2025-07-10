@@ -198,3 +198,23 @@ if (timestamps.length !== values.length) {
     gs.info("✔ Insertado: " + legible + " - cantidad: " + cantidad);
   }
 } 
+
+
+
+-------------
+
+
+try {
+    var raw = inputs['REST step'].responseBody;
+    var parsed = JSON.parse(raw);
+
+    // Asigna el token solo si existe
+    if (parsed && parsed.access_token) {
+        outputs.bearerToken = parsed.access_token;
+    } else {
+        gs.info('Token no encontrado en la respuesta');
+    }
+} catch (e) {
+    gs.info('Error parseando responseBody: ' + e.message);
+    outputs.bearerToken = null;
+}
