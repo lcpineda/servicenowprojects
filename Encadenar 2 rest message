@@ -1,0 +1,24 @@
+var MiIntegracionAPI = Class.create();
+MiIntegracionAPI.prototype = {
+    initialize: function() {},
+
+    ejecutarConsumo: function() {
+        // Paso 1: Obtener el token
+        var tokenRequest = new RESTMessageV2('ObtenerToken', 'default');
+        var tokenResponse = tokenRequest.execute();
+        var tokenBody = tokenResponse.getBody();
+        var tokenJSON = JSON.parse(tokenBody);
+        var accessToken = tokenJSON.access_token; // ajusta según el JSON real
+
+        // Paso 2: Usar el token en el segundo consumo
+        var request = new RESTMessageV2('ConsumoFinal', 'default');
+        request.setRequestHeader("Authorization", "Bearer " + accessToken);
+
+        var response = request.execute();
+        var responseBody = response.getBody();
+
+        return responseBody; // o hacer algo con la respuesta
+    },
+
+    type: 'MiIntegracionAPI'
+};
