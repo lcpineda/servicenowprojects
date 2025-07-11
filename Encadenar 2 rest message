@@ -22,3 +22,37 @@ MiIntegracionAPI.prototype = {
 
     type: 'MiIntegracionAPI'
 };
+--------------------------
+
+
+
+(function() {
+    try {
+        // Paso 1: Llamada a la API de autenticación para obtener el token
+        var tokenRequest = new RESTMessageV2('ObtenerToken', 'default'); // Ajusta el nombre
+        var tokenResponse = tokenRequest.execute();
+        var tokenBody = tokenResponse.getBody();
+
+        gs.info("Token Response: " + tokenBody); // Para depurar
+
+        // Parseamos el JSON para extraer el token
+        var tokenJSON = JSON.parse(tokenBody);
+        var accessToken = tokenJSON.access_token; // Ajusta esto si el token tiene otro nombre
+
+        gs.info("Access Token: " + accessToken); // Verifica que obtuviste el token
+
+        // Paso 2: Hacer la llamada principal con el token
+        var mainRequest = new RESTMessageV2('ConsumoFinal', 'default'); // Ajusta el nombre
+        mainRequest.setRequestHeader("Authorization", "Bearer " + accessToken);
+
+        var mainResponse = mainRequest.execute();
+        var mainBody = mainResponse.getBody();
+        var mainStatus = mainResponse.getStatusCode();
+
+        gs.info("Main API Status: " + mainStatus);
+        gs.info("Main API Body: " + mainBody);
+
+    } catch (ex) {
+        gs.error("Error en integración REST: " + ex.message);
+    }
+})(); 
