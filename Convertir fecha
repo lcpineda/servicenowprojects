@@ -1,0 +1,42 @@
+var FechaUtils = Class.create();
+FechaUtils.prototype = {
+    initialize: function() {},
+
+    convertirIsoAGMT5: function(isoString) {
+        try {
+            // Quitar los nanosegundos si existen (.000000000Z → Z)
+            isoString = isoString.replace(/\.\d+Z$/, 'Z');
+
+            // Parsear como fecha en UTC
+            var fechaUTC = new Date(isoString);
+
+            // Restar 5 horas (GMT-5)
+            fechaUTC.setHours(fechaUTC.getHours() - 5);
+
+            // Formatear en DD/MM/YYYY HH:mm:ss
+            var day = ('0' + fechaUTC.getDate()).slice(-2);
+            var month = ('0' + (fechaUTC.getMonth() + 1)).slice(-2);
+            var year = fechaUTC.getFullYear();
+            var hours = ('0' + fechaUTC.getHours()).slice(-2);
+            var minutes = ('0' + fechaUTC.getMinutes()).slice(-2);
+            var seconds = ('0' + fechaUTC.getSeconds()).slice(-2);
+
+            return day + '/' + month + '/' + year + ' ' + hours + ':' + minutes + ':' + seconds;
+        } catch (e) {
+            gs.error('Error al convertir la fecha ISO: ' + e.message);
+            return null;
+        }
+    },
+
+    type: 'FechaUtils'
+};
+
+
+
+
+
+
+var util = new FechaUtils();
+var fechaOriginal = "2025-07-16T08:20:00.000000000Z";
+var fechaConvertida = util.convertirIsoAGMT5(fechaOriginal);
+gs.info("Fecha convertida: " + fechaConvertida);
