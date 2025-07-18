@@ -1,0 +1,35 @@
+(function process(/*RESTAPIRequest*/ request, /*RESTAPIResponse*/ response) {
+    try {
+        var expectedToken = "1234567890abcde";
+        var incomingToken = request.getHeader("Authorization");
+
+        if (!incomingToken || !incomingToken.startsWith("Token ") || incomingToken.split(" ")[1] !== expectedToken) {
+            response.setStatus(401);
+            response.setBody({ error: "Unauthorized: Invalid or missing token" });
+            return;
+        }
+
+        // Código del API como ya lo tienes
+        var result = [];
+        var numberParam = request.getQueryParameter("number");
+        var gr = new GlideRecord('incident');
+        if (numberParam)
+            gr.addQuery('number', numberParam);
+        gr.setLimit(50);
+        gr.query();
+        while (gr.next()) {
+            result.push({
+                number: gr.getValue('number'),
+                state: gr.getDisplayValue('state'),
+                priority: gr.getDisplayValue('priority')
+            });
+        }
+
+        response.setStatus(200);
+        response.setBody(result);
+
+    } catch (e) {
+        response.setStatus(500);
+        response.setBody({ error: e.message });
+    }
+})(request, response);
