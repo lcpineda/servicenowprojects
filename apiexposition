@@ -1,0 +1,17 @@
+(function process(/*RESTAPIRequest*/ request, /*RESTAPIResponse*/ response) {
+
+    var result = [];
+
+    var gr = new GlideRecord('incident');
+    gr.query();
+    while (gr.next()) {
+        result.push({
+            number: gr.getValue('number'),
+            state: gr.getDisplayValue('state'),
+            priority: gr.getDisplayValue('priority')
+        });
+    }
+
+    response.setBody(result);
+
+})(request, response);
