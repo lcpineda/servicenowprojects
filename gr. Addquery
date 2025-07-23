@@ -1,0 +1,23 @@
+var gr = new GlideRecord('change_request');
+gr.addQuery('cmdb_ci.name', 'STARTSWITH', 'BANCA EN LINEA EL SALVADOR');
+
+// Filtro por fecha "opened_at" dentro del año actual
+gr.addQuery('opened_at', '>=', gs.beginningOfThisYear());
+gr.addQuery('opened_at', '<=', gs.endOfThisYear());
+
+// Filtro por fecha "start_date" dentro del año actual
+gr.addQuery('start_date', '>=', gs.beginningOfThisYear());
+gr.addQuery('start_date', '<=', gs.endOfThisYear());
+
+gr.setLimit(10);
+gr.query();
+
+while (gr.next()) {
+  result.push({
+    number: gr.getValue('number'),
+    type: gr.getValue('type'),
+    state: gr.getDisplayValue('state'),
+    description: gr.getValue('description'),
+    start_date: gr.getDisplayValue('start_date')
+  });
+} 
