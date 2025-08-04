@@ -1,0 +1,37 @@
+function parseCustomDate(dateStr) {
+    if (!dateStr) return null;
+
+    var parts = dateStr.split('/'); // Asume formato dd/MM/yyyy
+    if (parts.length !== 3) return null;
+
+    var day = parseInt(parts[0], 10);
+    var month = parseInt(parts[1], 10) - 1; // ¡JavaScript usa meses de 0 a 11!
+    var year = parseInt(parts[2], 10);
+
+    var parsed = new Date(year, month, day);
+    return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+
+
+
+function onSubmit() {
+    var startStr = g_form.getValue('start_date');  // variable tipo fecha
+    var endStr = g_form.getValue('end_date');      // otra variable tipo fecha
+
+    var start = parseCustomDate(startStr);
+    var end = parseCustomDate(endStr);
+
+    if (!start || !end) {
+        g_form.showFieldMsg('end_date', 'Formato de fecha inválido', 'error');
+        return false;
+    }
+
+    if (end < start) {
+        g_form.showFieldMsg('end_date', 'La fecha de fin no puede ser anterior a la de inicio', 'error');
+        return false;
+    }
+
+    return true;
+}
+
