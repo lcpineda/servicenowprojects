@@ -51,3 +51,55 @@ function onLoad() {
         // Agrega los casos que necesites.
     });
 } 
+
+
+
+
+
+
+
+
+Opción 2
+
+Scriot include 
+var UserTitleAPI = Class.create();
+UserTitleAPI.prototype = {
+    initialize: function() {},
+
+    getCurrentTitle: function() {
+        var u = new GlideRecord('sys_user');
+        u.get(gs.getUserID());    // sesión actual
+        return (u.title + '') || '';
+    },
+
+    type: 'UserTitleAPI'
+};
+
+
+Client script
+
+function onLoad() {
+    var ga = new GlideAjax('UserTitleAPI');
+    ga.addParam('sysparm_name', 'getCurrentTitle');
+    ga.getXMLAnswer(function(title){
+        title = (title || '').toLowerCase();
+
+        // Ejemplos de reglas:
+        // - Si el título contiene "analista" → quitar la opción con value "administrador"
+        // - Si el título contiene "gerente"  → quitar "basico" y "intermedio"
+        if (title.indexOf('analista') > -1) {
+            safeRemove('mi_select', 'administrador');
+        }
+        if (title.indexOf('gerente') > -1) {
+            safeRemove('mi_select', 'basico');
+            safeRemove('mi_select', 'intermedio');
+        }
+    });
+
+    /** Quita una opción por value y limpia si estaba seleccionada */
+    function safeRemove(varName, value) {
+        var currentVal = g_form.getValue(varName);
+        g_form.removeOption(varName, value);
+        if (currentVal === value) g_form.setValue(varName, '');
+    }
+} 
