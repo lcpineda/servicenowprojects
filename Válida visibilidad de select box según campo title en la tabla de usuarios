@@ -1,0 +1,53 @@
+Script include
+
+var UserProfileUtils = Class.create();
+UserProfileUtils.prototype = {
+    initialize: function() {},
+
+    // Si te pasan userId, usa ese; si no, usa el usuario actual
+    getUserTitle: function(userId) {
+        var gr = new GlideRecord('sys_user');
+        if (userId) {
+            if (!gr.get(userId)) return '';
+        } else {
+            gr.get(gs.getUserID());
+        }
+        return gr.title + '';
+    },
+
+    type: 'UserProfileUtils'
+};
+
+
+
+
+
+Client scripy
+
+
+function onLoad() {
+    // 1) Lee el usuario objetivo: ¿el solicitante actual o "Requested for"?
+    //    Cambia 'requested_for' si tu ítem lo usa; si no, deja vacío para usar el actual.
+    var requestedFor = g_form.getValue('requested_for'); // opcional
+
+    var ga = new GlideAjax('UserProfileUtils');
+    ga.addParam('sysparm_name', 'getUserTitle');
+    if (requestedFor) ga.addParam('sysparm_userId', requestedFor);
+    ga.getXMLAnswer(function(title){
+        // Normaliza
+        title = (title || '').toString().trim().toLowerCase();
+
+        // 2) Aplica tu lógica: quitar/mostrar opciones
+        //    Cambia 'mi_select' por el name de tu variable Select Box
+        //    Cambia los valores 'opcion_x' por los Values (no Labels) de tus choices
+        if (title.includes('analista')) {
+            // Por ejemplo: si es Analista, ocultar la opción "administrador"
+            g_form.removeOption('mi_select', 'administrador');
+        } else if (title.includes('gerente')) {
+            // Si es Gerente, ocultar "basico" y "intermedio"
+            g_form.removeOption('mi_select', 'basico');
+            g_form.removeOption('mi_select', 'intermedio');
+        }
+        // Agrega los casos que necesites.
+    });
+} 
