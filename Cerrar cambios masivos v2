@@ -1,0 +1,162 @@
+/*
+ * Cierre masivo de change_request leyendo un CSV con columnas:
+ *   number, close_notes
+ *
+ * - Usa display value para state ("Closed").
+ * - NO modifica close_code (solo estado y close_notes).
+ * - Incluye DRY_RUN para simular sin guardar.
+ *
+ * Ejecutar en: System Definition > Scripts - Background (Scope: global)
+ */
+
+(function () {
+  // === DATOS A EDITAR =======================================================
+  // Opción A: poner el sys_id del adjunto CSV explícitamente:
+  var ATTACHMENT_SYS_ID = ''; // p.ej. 'd3b3c0f21b23c510c3a2f1b3ca4bcb9a'
+
+  // Opción B: buscar por nombre; toma el CSV más reciente subido por tu usuario si no hay ATTACHMENT_SYS_ID:
+  var FILE_NAME_CONTAINS = 'bulk_chg_close.csv';
+
+  // Simular sin guardar (primero úsalo en true para validar):
+  var DRY_RUN = true;
+
+  // Si quieres forzar una nota de cierre cuando falte en el CSV, indícala aquí (opcional).
+  var DEFAULT_CLOSE_NOTES = '';
+  // ==========================================================================
+
+  // ====== Utilidades ======
+  function info(m){ gs.info('[CHG CSV CLOSE] ' + m); }
+  function warn(m){ gs.warn('[CHG CSV CLOSE] ' + m); }
+  function err (m){ gs.error('[CHG CSV CLOSE] ' + m); }
+  function toStr(v){ return (v === null || v === undefined) ? '' : String(v); }
+
+  // Parser CSV sencillo (soporta comillas y CRLF)
+  function parseCSV(text){
+    var rows = [];
+    var i = 0, len = text.length, field = '', row = [], inQuotes = false;
+
+    while (i < len) {
+      var ch = text.charAt(i);
+      if (inQuotes) {
+        if (ch === '"') {
+          if (i + 1 < len && text.charAt(i + 1) === '"') { field += '"'; i++; }
+          else { inQuotes = false; }
+        } else { field += ch; }
+      } else {
+        if (ch === '"') inQuotes = true;
+        else if (ch === ',') { row.push(field); field = ''; }
+        else if (ch === '\r') { /* ignore CR */ }
+        else if (ch === '\n') { row.push(field); field = ''; rows.push(row); row = []; }
+        else { field += ch; }
+      }
+      i++;
+    }
+    row.push(field); rows.push(row);
+    return rows.filter(function(r){ return r.join('').trim().length > 0; });
+  }
+
+  function loadAttachmentText(sysId){
+    var sa = new GlideSysAttachment();
+    var bytes = sa.getBytes(sysId);
+    if (!bytes) return null;
+    return new Packages.java.lang.String(bytes, 'UTF-8') + '';
+  }
+
+  function findAttachmentSysId(){
+    if (ATTACHMENT_SYS_ID) return ATTACHMENT_SYS_ID;
+
+    var att = new GlideRecord('sys_attachment');
+    att.addQuery('file_name', 'CONTAINS', FILE_NAME_CONTAINS);
+    att.addQuery('content_type', 'CONTAINS', 'csv');
+    att.addQuery('sys_created_by', gs.getUserName());
+    att.orderByDesc('sys_created_on');
+    att.setLimit(1);
+    att.query();
+    if (att.next()) return String(att.getUniqueValue());
+
+    // fallback: solo por nombre
+    var att2 = new GlideRecord('sys_attachment');
+    att2.addQuery('file_name', 'CONTAINS', FILE_NAME_CONTAINS);
+    att2.addQuery('sys_created_by', gs.getUserName());
+    att2.orderByDesc('sys_created_on');
+    att2.setLimit(1);
+    att2.query();
+    if (att2.next()) return String(att2.getUniqueValue());
+
+    return '';
+  }
+
+  function findChangeByNumber(number){
+    var gr = new GlideRecord('change_request');
+    gr.addQuery('number', number);
+    gr.setLimit(1);
+    gr.query();
+    return gr.next() ? gr : null;
+  }
+
+  function closeChange(cr, closeNotes){
+    var wasClosed = (cr.getDisplayValue('state') === 'Closed');
+
+    cr.setDisplayValue('state', 'Closed');
+    if (closeNotes) cr.setValue('close_notes', closeNotes);
+
+    cr.setValue('closed_at', gs.nowDateTime());
+    cr.setValue('closed_by', gs.getUserID());
+    cr.work_notes = 'Cierre masivo vía CSV por ' + gs.getUserDisplayName() + '.';
+
+    if (DRY_RUN) {
+      info('DRY RUN: ' + cr.getValue('number') + ' '
+           + (wasClosed ? '(ya estaba cerrado; se actualizarían notas)' : 'se cerraría')
+           + ' | close_notes="' + (closeNotes || '') + '"');
+      return true;
+    }
+
+    var id = cr.update();
+    if (!id) return false;
+
+    info(cr.getValue('number') + ' '
+         + (wasClosed ? 'ya estaba cerrado; se actualizaron notas.' : 'cerrado.')
+         + (closeNotes ? ' | close_notes aplicado.' : ''));
+    return true;
+  }
+
+  // ====== Carga y validación del CSV ======
+  var attSysId = findAttachmentSysId();
+  if (!attSysId) { err('No se encontró adjunto CSV. Define ATTACHMENT_SYS_ID o FILE_NAME_CONTAINS.'); return; }
+  info('Usando adjunto sys_id=' + attSysId);
+
+  var csv = loadAttachmentText(attSysId);
+  if (!csv) { err('No se pudo leer el contenido del adjunto.'); return; }
+
+  var rows = parseCSV(csv);
+  if (!rows.length) { err('El CSV está vacío.'); return; }
+
+  var headers = rows[0].map(function(h){ return String(h || '').trim().toLowerCase(); });
+  var hNumber = headers.indexOf('number');
+  var hNotes  = headers.indexOf('close_notes');
+
+  if (hNumber === -1) { err('El CSV debe incluir la columna "number".'); return; }
+  if (hNotes  === -1) { warn('No se encontró "close_notes"; se usará DEFAULT_CLOSE_NOTES si está configurado.'); }
+
+  var ok=0, fail=0, skip=0;
+
+  for (var r = 1; r < rows.length; r++) {
+    var row = rows[r];
+    var number = toStr(row[hNumber]).trim();
+    var notes  = (hNotes >= 0 ? toStr(row[hNotes]) : '');
+    if (!number) { warn('Fila ' + (r+1) + ' sin number; se omite.'); skip++; continue; }
+
+    notes = notes && notes.trim() ? notes.trim() : toStr(DEFAULT_CLOSE_NOTES).trim();
+
+    try {
+      var cr = findChangeByNumber(number);
+      if (!cr) { warn('Fila ' + (r+1) + ': no existe change_request con number=' + number); fail++; continue; }
+      if (closeChange(cr, notes)) ok++; else fail++;
+    } catch (e) {
+      err('Fila ' + (r+1) + ': error con number=' + number + ' -> ' + e.message);
+      fail++;
+    }
+  }
+
+  info('RESUMEN => OK=' + ok + ' | FAIL=' + fail + ' | SKIP=' + skip + ' | TOTAL_FILAS=' + (rows.length - 1) + ' | DRY_RUN=' + DRY_RUN);
+})();
