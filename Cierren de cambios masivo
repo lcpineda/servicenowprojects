@@ -1,0 +1,210 @@
+/*
+ * Cierre masivo de change_request desde CSV adjunto.
+ * - CSV con encabezados: number, sys_id, close_code, close_notes
+ * - Usa display value para state ("Closed") y close_code ("Successful", "Unsuccessful", "Canceled", "Backed Out")
+ * - Permite DRY RUN para validar antes de actualizar.
+ *
+ * Ejecutar en: System Definition > Scripts - Background (Scope: global)
+ */
+
+(function () {
+  // === DATOS A EDITAR =======================================================
+  // Opción A: especifica el sys_id del adjunto CSV directamente:
+  var ATTACHMENT_SYS_ID = ''; // p.ej: 'd3b3c0f21b23c510c3a2f1b3ca4bcb9a'
+
+  // Opción B (alternativa): buscar por nombre de archivo, toma el más reciente del usuario actual si no se da ATTACHMENT_SYS_ID:
+  var FILE_NAME_CONTAINS = 'bulk_chg_close.csv'; // parte del nombre del archivo CSV
+
+  var DRY_RUN = false; // true = NO guarda cambios (solo simula). false = actualiza.
+  var DEFAULT_CLOSE_CODE = ''; // opcional: si una fila no trae close_code, usa este. Dejar '' para no forzar.
+  // ==========================================================================
+
+  // ====== Utilidades ======
+  function info(m){ gs.info('[CHG CSV CLOSE] ' + m); }
+  function warn(m){ gs.warn('[CHG CSV CLOSE] ' + m); }
+  function err (m){ gs.error('[CHG CSV CLOSE] ' + m); }
+
+  function toStr(v){ return (v === null || v === undefined) ? '' : String(v); }
+
+  // Parser CSV sencillo con soporte de comillas
+  function parseCSV(text){
+    var rows = [];
+    var i = 0, len = text.length, field = '', row = [], inQuotes = false;
+
+    while (i < len) {
+      var ch = text.charAt(i);
+
+      if (inQuotes) {
+        if (ch === '"') {
+          if (i + 1 < len && text.charAt(i + 1) === '"') { // comilla escapada
+            field += '"'; i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          field += ch;
+        }
+      } else {
+        if (ch === '"') {
+          inQuotes = true;
+        } else if (ch === ',') {
+          row.push(field); field = '';
+        } else if (ch === '\r') {
+          // ignora \r (maneja CRLF)
+        } else if (ch === '\n') {
+          row.push(field); field = '';
+          rows.push(row); row = [];
+        } else {
+          field += ch;
+        }
+      }
+      i++;
+    }
+    // último campo/fila
+    row.push(field);
+    rows.push(row);
+
+    // normalizar: quitar filas vacías totales
+    return rows.filter(function(r){
+      return r.join('').trim().length > 0;
+    });
+  }
+
+  function loadAttachmentBytes(sysId){
+    var sa = new GlideSysAttachment();
+    var bytes = sa.getBytes(sysId);
+    if (!bytes) return null;
+    return new Packages.java.lang.String(bytes, 'UTF-8') + '';
+  }
+
+  function findAttachmentSysId(){
+    if (ATTACHMENT_SYS_ID) return ATTACHMENT_SYS_ID;
+
+    var grAtt = new GlideRecord('sys_attachment');
+    grAtt.addQuery('file_name', 'CONTAINS', FILE_NAME_CONTAINS);
+    grAtt.addQuery('content_type', 'CONTAINS', 'csv');
+    grAtt.addQuery('sys_created_by', gs.getUserName());
+    grAtt.orderByDesc('sys_created_on');
+    grAtt.setLimit(1);
+    grAtt.query();
+    if (grAtt.next()) return String(grAtt.getUniqueValue());
+
+    // Si no hay por content_type, intentar solo por nombre
+    var grAtt2 = new GlideRecord('sys_attachment');
+    grAtt2.addQuery('file_name', 'CONTAINS', FILE_NAME_CONTAINS);
+    grAtt2.addQuery('sys_created_by', gs.getUserName());
+    grAtt2.orderByDesc('sys_created_on');
+    grAtt2.setLimit(1);
+    grAtt2.query();
+    if (grAtt2.next()) return String(grAtt2.getUniqueValue());
+
+    return '';
+  }
+
+  function findChangeByItem(item){
+    var cr = new GlideRecord('change_request');
+    if (item.sys_id) {
+      if (cr.get(item.sys_id)) return cr;
+      return null;
+    }
+    if (item.number) {
+      cr.addQuery('number', item.number);
+      cr.setLimit(1);
+      cr.query();
+      if (cr.next()) return cr;
+    }
+    return null;
+  }
+
+  function closeChange(cr, item){
+    var wasClosed = (cr.getDisplayValue('state') === 'Closed');
+
+    cr.setDisplayValue('state', 'Closed');
+
+    var code = toStr(item.close_code || DEFAULT_CLOSE_CODE).trim();
+    if (code) cr.setDisplayValue('close_code', code);
+
+    if (item.close_notes) cr.setValue('close_notes', toStr(item.close_notes));
+
+    cr.setValue('closed_at', gs.nowDateTime());
+    cr.setValue('closed_by', gs.getUserID());
+
+    cr.work_notes = 'Cierre masivo vía CSV por ' + gs.getUserDisplayName() + '.';
+
+    if (DRY_RUN) {
+      info('DRY RUN: ' + cr.getValue('number') + ' ' + (wasClosed ? '(ya estaba cerrado; se actualizarían notas/código)' : 'se cerraría')
+        + ' | close_code="' + cr.getDisplayValue('close_code') + '" | notas="' + (item.close_notes || '') + '"');
+      return true;
+    }
+
+    var id = cr.update();
+    if (!id) return false;
+
+    info(cr.getValue('number') + ' ' + (wasClosed ? 'ya estaba cerrado; se actualizaron notas/código.' : 'cerrado.')
+         + ' close_code="' + cr.getDisplayValue('close_code') + '"');
+    return true;
+  }
+
+  // ====== Carga de adjunto ======
+  var attSysId = findAttachmentSysId();
+  if (!attSysId) {
+    err('No se encontró adjunto CSV. Define ATTACHMENT_SYS_ID o un FILE_NAME_CONTAINS válido.');
+    return;
+  }
+  info('Usando adjunto sys_id=' + attSysId);
+
+  var csv = loadAttachmentBytes(attSysId);
+  if (!csv) { err('No se pudo leer el contenido del adjunto.'); return; }
+
+  var rows = parseCSV(csv);
+  if (!rows.length) { err('El CSV está vacío.'); return; }
+
+  // Mapeo de encabezados
+  var headers = rows[0].map(function(h){ return String(h || '').trim().toLowerCase(); });
+  var hIndex = {
+    number: headers.indexOf('number'),
+    sys_id: headers.indexOf('sys_id'),
+    close_code: headers.indexOf('close_code'),
+    close_notes: headers.indexOf('close_notes')
+  };
+
+  if (hIndex.number === -1 && hIndex.sys_id === -1) {
+    err('El CSV debe tener al menos "number" o "sys_id" como encabezado.');
+    return;
+  }
+
+  // Procesar filas
+  var ok = 0, fail = 0, skip = 0;
+
+  for (var r = 1; r < rows.length; r++) {
+    var row = rows[r];
+
+    // Armar item
+    var item = {
+      number: (hIndex.number >= 0 ? toStr(row[hIndex.number]).trim() : ''),
+      sys_id: (hIndex.sys_id >= 0 ? toStr(row[hIndex.sys_id]).trim() : ''),
+      close_code: (hIndex.close_code >= 0 ? toStr(row[hIndex.close_code]).trim() : ''),
+      close_notes: (hIndex.close_notes >= 0 ? toStr(row[hIndex.close_notes]) : '')
+    };
+
+    if (!item.number && !item.sys_id) {
+      warn('Fila ' + (r+1) + ' sin number ni sys_id. Se omite.');
+      skip++; continue;
+    }
+
+    try {
+      var cr = findChangeByItem(item);
+      if (!cr) {
+        warn('Fila ' + (r+1) + ': No se encontró change_request para ' + (item.number || item.sys_id));
+        fail++; continue;
+      }
+
+      if (closeChange(cr, item)) ok++; else fail++;
+    } catch (e) {
+      err('Fila ' + (r+1) + ': error procesando ' + (item.number || item.sys_id) + ' -> ' + e.message);
+      fail++;
+    }
+  }
+
+  info('RESUMEN => OK=' + ok + ' | FAIL=' + fail + ' | SKIP=' + skip + ' | TOTAL_FILAS=' + (rows.length - 1) + ' | DRY_RUN=' + DRY_RUN);
+})();
