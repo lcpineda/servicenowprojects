@@ -1,16 +1,16 @@
 
 /*
- * Cierre masivo de change_request leyendo un CSV con columnas:
+ * Cierre masivo de change_request desde CSV con columnas:
  *   number, close_notes
  * Ejecutar en Scripts - Background (scope global).
  */
 
 (function () {
   // === DATOS A EDITAR =======================================================
-  var ATTACHMENT_SYS_ID = '';       // si lo sabes, pégalo aquí
-  var FILE_NAME_CONTAINS = 'bulk_chg_close.csv'; // fallback por nombre
-  var DRY_RUN = true;               // primero validar en true
-  var DEFAULT_CLOSE_NOTES = '';     // opcional si una fila viene sin notas
+  var ATTACHMENT_SYS_ID = '';               // pega aquí el sys_id del CSV si lo tienes
+  var FILE_NAME_CONTAINS = 'bulk_chg_close.csv'; // o parte del nombre
+  var DRY_RUN = true;                       // primero validar
+  var DEFAULT_CLOSE_NOTES = '';             // opcional si alguna fila no trae notas
   // ==========================================================================
 
   function info(m){ gs.info('[CHG CSV CLOSE] ' + m); }
@@ -25,15 +25,14 @@
       var ch = text.charAt(i);
       if (inQuotes) {
         if (ch === '"') {
-          if (i + 1 < len && text.charAt(i + 1) === '"') { field += '"'; i++; }
-          else { inQuotes = false; }
-        } else field += ch;
+          if (i + 1 < len && text.charAt(i + 1) === '"') { field += '"'; i++; } else { inQuotes = false; }
+        } else { field += ch; }
       } else {
         if (ch === '"') inQuotes = true;
         else if (ch === ',') { row.push(field); field = ''; }
         else if (ch === '\r') { /* ignore */ }
         else if (ch === '\n') { row.push(field); field = ''; rows.push(row); row = []; }
-        else field += ch;
+        else { field += ch; }
       }
       i++;
     }
@@ -41,15 +40,43 @@
     return rows.filter(function(r){ return r.join('').trim().length > 0; });
   }
 
-  // --- Lectura de adjunto (FIX) ---
+  // --- Lectura robusta del adjunto (3 intentos) ---
   function loadAttachmentTextBySysId(sysId){
     var att = new GlideRecord('sys_attachment');
     if (!att.get(sysId)) return null;
 
-    // Opción segura: getContent devuelve java.lang.String según el tipo
     var sa = new GlideSysAttachment();
-    var content = sa.getContent(att); // <--- FIX: pasar el GlideRecord, no el sys_id
-    return content ? (content + '') : null;
+
+    // 1) getContent (si está disponible y soportado)
+    try {
+      var content = sa.getContent(att); // String o null
+      if (content) return content + '';
+    } catch (e1) { /* sigue */ }
+
+    // 2) getBytes (muchas versiones lo soportan con GR)
+    try {
+      var bytes = sa.getBytes(att); // byte[]
+      if (bytes) return new Packages.java.lang.String(bytes, 'UTF-8') + '';
+    } catch (e2) { /* sigue */ }
+
+    // 3) getContentStream + BufferedReader
+    try {
+      var is = sa.getContentStream(att); // java.io.InputStream
+      if (is) {
+        var reader = new Packages.java.io.BufferedReader(
+          new Packages.java.io.InputStreamReader(is, 'UTF-8')
+        );
+        var sb = new Packages.java.lang.StringBuilder();
+        var line;
+        while ((line = reader.readLine()) !== null) {
+          sb.append(line).append('\n');
+        }
+        reader.close();
+        return sb.toString() + '';
+      }
+    } catch (e3) { /* sigue */ }
+
+    return null;
   }
 
   function findAttachmentSysId(){
@@ -104,7 +131,7 @@
   info('Usando adjunto sys_id=' + attSysId);
 
   var csv = loadAttachmentTextBySysId(attSysId);
-  if (!csv) { err('No se pudo leer el contenido del adjunto (verifica permisos/tipo de archivo).'); return; }
+  if (!csv) { err('No se pudo leer el contenido del adjunto (permisos/tipo de archivo/encoding).'); return; }
 
   var rows = parseCSV(csv);
   if (!rows.length) { err('El CSV está vacío.'); return; }
