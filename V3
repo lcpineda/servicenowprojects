@@ -1,0 +1,117 @@
+/*
+ * Cancelación masiva de change_request leyendo un CSV con columnas:
+ *   number, close_notes
+ * - Cambia el estado a "Canceled" (display value).
+ * - (Opcional) setea close_code="Canceled", active=false, closed_*.
+ * - Incluye fallback de assignment_group si tu instancia lo exige.
+ */
+
+(function () {
+  // === DATOS A EDITAR =======================================================
+  var ATTACHMENT_SYS_ID = '';                 // sys_id del CSV (opcional)
+  var FILE_NAME_CONTAINS = 'bulk_chg_cancel.csv'; // parte del nombre si no usas sys_id
+  var DRY_RUN = false;                        // primero pruébalo en true
+
+  // Si el cambio NO tiene grupo y tu instancia lo exige, usa uno por defecto:
+  var DEFAULT_GROUP_NAME   = 'Change Management'; // o deja '' si no quieres fallback
+  var DEFAULT_GROUP_SYS_ID = '';                  // recomendado usar sys_id
+  var DEFAULT_ASSIGNED_TO  = '';                  // sys_id de sys_user (opcional)
+
+  // Flags de cancelación
+  var SET_CLOSE_CODE_CANCELED = true;  // pone close_code="Canceled"
+  var SET_ACTIVE_FALSE        = true;  // pone active=false
+  var SET_CLOSED_TIMESTAMPS   = true;  // setea closed_at/by (algunas instancias lo usan también al cancelar)
+  // ==========================================================================
+
+  function info(m){ gs.info('[CHG CSV CANCEL] ' + m); }
+  function warn(m){ gs.warn('[CHG CSV CANCEL] ' + m); }
+  function err (m){ gs.error('[CHG CSV CANCEL] ' + m); }
+  function toStr(v){ return (v === null || v === undefined) ? '' : String(v); }
+
+  // --- Parser CSV (comillas + CRLF) ---
+  function parseCSV(text){
+    var rows = [], i = 0, len = text.length, field = '', row = [], inQuotes = false;
+    while (i < len) {
+      var ch = text.charAt(i);
+      if (inQuotes) {
+        if (ch === '"') {
+          if (i + 1 < len && text.charAt(i + 1) === '"') { field += '"'; i++; } else { inQuotes = false; }
+        } else { field += ch; }
+      } else {
+        if (ch === '"') inQuotes = true;
+        else if (ch === ',') { row.push(field); field = ''; }
+        else if (ch === '\r') { /* ignore */ }
+        else if (ch === '\n') { row.push(field); field = ''; rows.push(row); row = []; }
+        else { field += ch; }
+      }
+      i++;
+    }
+    row.push(field); rows.push(row);
+    return rows.filter(function(r){ return r.join('').trim().length > 0; });
+  }
+
+  // --- Lectura robusta del adjunto ---
+  function loadAttachmentTextBySysId(sysId){
+    var att = new GlideRecord('sys_attachment');
+    if (!att.get(sysId)) return null;
+
+    var sa = new GlideSysAttachment();
+    try { var s = sa.getContent(att); if (s) return s + ''; } catch (e1) {}
+    try { var b = sa.getBytes(att);   if (b) return new Packages.java.lang.String(b, 'UTF-8') + ''; } catch (e2) {}
+    try {
+      var is = sa.getContentStream(att);
+      if (is) {
+        var br = new Packages.java.io.BufferedReader(new Packages.java.io.InputStreamReader(is, 'UTF-8'));
+        var sb = new Packages.java.lang.StringBuilder(); var line;
+        while ((line = br.readLine()) !== null) sb.append(line).append('\n');
+        br.close(); return sb.toString() + '';
+      }
+    } catch (e3) {}
+    return null;
+  }
+
+  function findAttachmentSysId(){
+    if (ATTACHMENT_SYS_ID) return ATTACHMENT_SYS_ID;
+    var q = new GlideRecord('sys_attachment');
+    q.addQuery('file_name', 'CONTAINS', FILE_NAME_CONTAINS);
+    q.addQuery('sys_created_by', gs.getUserName());
+    q.orderByDesc('sys_created_on'); q.setLimit(1); q.query();
+    if (q.next()) return String(q.getUniqueValue());
+    return '';
+  }
+
+  // --- Helpers CHG ---
+  function findChangeByNumber(number){
+    var gr = new GlideRecord('change_request');
+    gr.addQuery('number', number);
+    gr.setLimit(1);
+    gr.query();
+    return gr.next() ? gr : null;
+  }
+
+  // Asegurar assignment_group (si tu instancia lo exige)
+  function ensureAssignment(cr){
+    var setGroup = false;
+    if (!cr.getValue('assignment_group')) {
+      var groupSysId = toStr(DEFAULT_GROUP_SYS_ID).trim();
+      if (!groupSysId && DEFAULT_GROUP_NAME) {
+        var g = new GlideRecord('sys_user_group');
+        g.addQuery('name', DEFAULT_GROUP_NAME);
+        g.setLimit(1); g.query();
+        if (g.next()) groupSysId = String(g.getUniqueValue());
+      }
+      if (groupSysId) { cr.setValue('assignment_group', groupSysId); setGroup = true; }
+    }
+    if (!cr.getValue('assigned_to') && DEFAULT_ASSIGNED_TO) {
+      cr.setValue('assigned_to', DEFAULT_ASSIGNED_TO);
+    }
+    return setGroup || cr.getValue('assignment_group'); // truthy si quedó con grupo
+  }
+
+  function cancelChange(cr, closeNotes){
+    var wasCanceled = (cr.getDisplayValue('state') === 'Canceled');
+
+    // Si tu instancia valida grupo obligatorio, asegúralo:
+    if (!ensureAssignment(cr)) {
+      warn(cr.getValue('number') + ' sin assignment_group y no se definió DEFAULT_GROUP; se omite.');
+      return '
