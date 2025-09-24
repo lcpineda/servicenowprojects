@@ -1,0 +1,22 @@
+POST https://<tu_instancia>.service-now.com/oauth_token.do
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password
+&client_id=<CLIENT_ID>
+&client_secret=<CLIENT_SECRET>
+&username=<USUARIO_SN>
+&password=<PASSWORD_SN>
+
+
+
+
+
+service-now.com/api/x_your_scope/incident_api/incidents?limit=5&state=1
+
+
+
+
+Consumir el endpoint
+
+GET https://<tu_instancia>.service-now.com/api/x_your_scope/incident_api/incidents?limit=5&state=1
+Authorization: Bearer eyJhbGciOi...
