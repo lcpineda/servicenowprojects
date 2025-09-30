@@ -1,0 +1,53 @@
+(function execute(inputs, outputs) {
+    try {
+        var data = JSON.parse(inputs.input_json);
+
+        function renderObject(obj) {
+            var html = "<table border='1' cellpadding='5' cellspacing='0' style='border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:13px;'>";
+            for (var key in obj) {
+                if (obj.hasOwnProperty(key)) {
+                    html += "<tr>";
+                    html += "<td style='font-weight:bold;background:#f4f4f4;width:25%;'>" + key + "</td>";
+                    if (typeof obj[key] === "object" && obj[key] !== null) {
+                        html += "<td>" + renderValue(obj[key]) + "</td>";
+                    } else {
+                        html += "<td>" + obj[key] + "</td>";
+                    }
+                    html += "</tr>";
+                }
+            }
+            html += "</table>";
+            return html;
+        }
+
+        function renderArray(arr) {
+            var html = "<ul>";
+            arr.forEach(function(item) {
+                if (typeof item === "object" && item !== null) {
+                    html += "<li>" + renderValue(item) + "</li>";
+                } else {
+                    html += "<li>" + item + "</li>";
+                }
+            });
+            html += "</ul>";
+            return html;
+        }
+
+        function renderValue(value) {
+            if (Array.isArray(value)) {
+                return renderArray(value);
+            } else if (typeof value === "object" && value !== null) {
+                return renderObject(value);
+            } else {
+                return value;
+            }
+        }
+
+        // Renderizar todo el JSON como HTML
+        outputs.json_html = renderObject(data);
+
+    } catch (e) {
+        gs.error("Error al parsear JSON dinámico: " + e.message);
+        outputs.json_html = "<p style='color:red;'>Error al parsear JSON</p>";
+    }
+})(inputs, outputs);
