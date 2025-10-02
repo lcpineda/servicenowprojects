@@ -1,0 +1,11 @@
+(function refineQuery(current, parent) {
+    var user = gs.getUserID();                      // ID del usuario actual
+    var grUser = new GlideRecord('sys_user');
+    if (grUser.get(user)) {
+        var costCenter = grUser.getValue('cost_center');   // centro de costos del usuario
+        if (costCenter) {
+            return 'cost_center=' + costCenter;     // filtra contratos por ese centro de costos
+        }
+    }
+    return ''; // si el usuario no tiene centro de costos asignado, no muestra nada
+})(current, parent);
