@@ -9,3 +9,18 @@
     }
     return ''; // si el usuario no tiene centro de costos asignado, no muestra nada
 })(current, parent);
+
+
+
+// Reference Qualifier para variable de catálogo
+(function() {
+    var user = gs.getUserID();              // Usuario logueado
+    var grUser = new GlideRecord('sys_user');
+    if (grUser.get(user)) {
+        var costCenter = grUser.getValue('cost_center');  // centro de costos del usuario
+        if (costCenter) {
+            return 'cost_center=' + costCenter;   // filtra contratos del mismo centro de costos
+        }
+    }
+    return 'sys_id=NULL';   // si no tiene centro de costos, no muestra nada
+})();
