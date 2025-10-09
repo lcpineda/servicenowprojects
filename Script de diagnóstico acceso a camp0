@@ -1,0 +1,90 @@
+// === Diagnóstico de campos Problem: workaround y cause_notes ===
+// Ejecutar en: System Definition → Scripts - Background
+// Autor: Diego Pineda + GPT
+// Fecha: 2025-10-09
+// Este script NO modifica datos. Solo imprime diagnóstico.
+
+(function() {
+    var sys_id = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxx'; // <--- Coloca aquí el sys_id del registro Problem que estás revisando
+    var campos = ['workaround', 'cause_notes'];
+    var gr = new GlideRecord('problem');
+
+    if (!gr.get(sys_id)) {
+        gs.print('❌ No se encontró el registro Problem con ese sys_id.');
+        return;
+    }
+
+    gs.print('🔎 Diagnóstico de campos para el problema: ' + gr.number + ' (' + sys_id + ')');
+    gs.print('---------------------------------------------------------------');
+
+    campos.forEach(function(campo) {
+        try {
+            gs.print('🧩 Campo: ' + campo);
+
+            // 1️⃣ Validar si el campo existe en la tabla
+            if (!gr.isValidField(campo)) {
+                gs.print('  ⚠️ El campo no existe en la tabla problem.');
+                return;
+            }
+
+            // 2️⃣ Validar permisos (ACL)
+            var canWrite = GlideSecurityManager.canWrite(gr.getTableName(), campo);
+            gs.print('  🔐 ACL Write permitido: ' + canWrite);
+
+            // 3️⃣ Validar si el valor actual se puede actualizar (simulado)
+            var oldValue = gr[campo];
+            try {
+                gr[campo] = 'Prueba de edición';
+                gs.print('  ✏️ Campo aceptó asignación en memoria (no error).');
+            } catch (e) {
+                gs.print('  ❌ No se puede asignar valor al campo (' + e.message + ').');
+            }
+            gr[campo] = oldValue; // Restaurar
+
+            // 4️⃣ Verificar si hay restricción de solo lectura en Dictionary
+            var dict = new GlideRecord('sys_dictionary');
+            dict.addQuery('name', 'problem');
+            dict.addQuery('element', campo);
+            dict.query();
+            if (dict.next()) {
+                gs.print('  🗂️ Dictionary: Read-only = ' + dict.getValue('read_only') +
+                         ', Mandatory = ' + dict.getValue('mandatory') +
+                         ', Attributes = ' + dict.getValue('attributes'));
+            } else {
+                gs.print('  ⚠️ No se encontró entrada de diccionario.');
+            }
+
+            // 5️⃣ Verificar si existe un Business Rule que lo toque
+            var br = new GlideRecord('sys_script');
+            br.addQuery('collection', 'problem');
+            br.addQuery('active', true);
+            br.addQuery('script', 'CONTAINS', campo);
+            br.query();
+            var encontrados = 0;
+            while (br.next()) {
+                encontrados++;
+                gs.print('  ⚙️ Business Rule que lo referencia: ' + br.name);
+            }
+            if (encontrados == 0) gs.print('  ✅ Ningún Business Rule activo menciona el campo.');
+
+            // 6️⃣ Validar si existe ACL específico para el campo
+            var acl = new GlideRecord('sys_security_acl');
+            acl.addQuery('name', 'problem.' + campo);
+            acl.query();
+            if (acl.hasNext()) {
+                gs.print('  🚧 ACL específico encontrado:');
+                while (acl.next()) {
+                    gs.print('     - ' + acl.operation + ' (Requires role: ' + acl.script + ')');
+                }
+            } else {
+                gs.print('  ✅ No hay ACL específico para el campo.');
+            }
+
+            gs.print('---------------------------------------------------------------');
+        } catch (err) {
+            gs.print('❌ Error analizando ' + campo + ': ' + err.message);
+        }
+    });
+
+    gs.print('✅ Diagnóstico completado. Revisa la salida del log.');
+})();
