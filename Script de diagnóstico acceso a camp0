@@ -88,3 +88,160 @@
 
     gs.print('✅ Diagnóstico completado. Revisa la salida del log.');
 })();
+
+
+
+
+--------------------------------------
+
+
+
+// === Diagnóstico extendido de campos Problem: workaround y cause_notes ===
+// Autor: Diego Pineda + GPT
+// Fecha: 2025-10-09
+// Este script NO modifica datos. Solo analiza configuración y dependencias.
+
+(function() {
+    var sys_id = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxx'; // <--- Coloca aquí el sys_id del Problem que analizas
+    var campos = ['workaround', 'cause_notes'];
+    var gr = new GlideRecord('problem');
+
+    if (!gr.get(sys_id)) {
+        gs.print('❌ No se encontró el registro Problem con ese sys_id.');
+        return;
+    }
+
+    gs.print('🔎 Diagnóstico extendido del problema: ' + gr.number + ' (' + sys_id + ')');
+    gs.print('==============================================================');
+
+    campos.forEach(function(campo) {
+        gs.print('\n🧩 Campo: ' + campo);
+        gs.print('--------------------------------------------------------------');
+
+        // 1️⃣ Verificar existencia del campo
+        if (!gr.isValidField(campo)) {
+            gs.print('  ⚠️ El campo no existe en la tabla.');
+            return;
+        }
+
+        // 2️⃣ ACLs
+        var canWrite = GlideSecurityManager.canWrite(gr.getTableName(), campo);
+        gs.print('  🔐 ACL Write permitido: ' + canWrite);
+
+        // 3️⃣ Intento de asignación (solo prueba)
+        var oldValue = gr[campo];
+        try {
+            gr[campo] = 'Prueba de edición';
+            gs.print('  ✏️ Asignación temporal exitosa (campo editable en memoria).');
+        } catch (e) {
+            gs.print('  ❌ Error al asignar valor: ' + e.message);
+        }
+        gr[campo] = oldValue;
+
+        // 4️⃣ Diccionario
+        var dict = new GlideRecord('sys_dictionary');
+        dict.addQuery('name', 'problem');
+        dict.addQuery('element', campo);
+        dict.query();
+        if (dict.next()) {
+            gs.print('  🗂️ Dictionary → Read-only: ' + dict.getValue('read_only') +
+                     ', Attributes: ' + dict.getValue('attributes'));
+        } else {
+            gs.print('  ⚠️ No hay entrada de diccionario encontrada.');
+        }
+
+        // 5️⃣ Business Rules
+        var br = new GlideRecord('sys_script');
+        br.addQuery('collection', 'problem');
+        br.addQuery('active', true);
+        br.addQuery('script', 'CONTAINS', campo);
+        br.query();
+        var countBR = 0;
+        while (br.next()) {
+            countBR++;
+            gs.print('  ⚙️ Business Rule: ' + br.name + ' (' + br.when + ')');
+        }
+        if (countBR == 0) gs.print('  ✅ No hay Business Rules activas que lo modifiquen.');
+
+        // 6️⃣ ACL específicos
+        var acl = new GlideRecord('sys_security_acl');
+        acl.addQuery('name', 'problem.' + campo);
+        acl.query();
+        if (acl.hasNext()) {
+            gs.print('  🚧 ACLs específicos:');
+            while (acl.next()) {
+                gs.print('     - ' + acl.operation + ' | ' + acl.name);
+            }
+        } else {
+            gs.print('  ✅ No hay ACLs específicos.');
+        }
+
+        // 7️⃣ Client Scripts
+        var cs = new GlideRecord('sys_script_client');
+        cs.addQuery('table', 'problem');
+        cs.addQuery('active', true);
+        cs.addQuery('script', 'CONTAINS', campo);
+        cs.query();
+        var countCS = 0;
+        while (cs.next()) {
+            countCS++;
+            gs.print('  💻 Client Script: ' + cs.name + ' (' + cs.ui_type + ')');
+        }
+        if (countCS == 0) gs.print('  ✅ No hay Client Scripts que lo mencionen.');
+
+        // 8️⃣ UI Scripts globales
+        var ui = new GlideRecord('sys_ui_script');
+        ui.addQuery('active', true);
+        ui.addQuery('script', 'CONTAINS', campo);
+        ui.query();
+        var countUI = 0;
+        while (ui.next()) {
+            countUI++;
+            gs.print('  🌐 UI Script global: ' + ui.name);
+        }
+        if (countUI == 0) gs.print('  ✅ No hay UI Scripts globales que lo afecten.');
+
+        // 9️⃣ Flujos (Flow Designer)
+        var flow = new GlideRecord('sys_hub_flow');
+        flow.addQuery('active', true);
+        flow.addQuery('definition', 'CONTAINS', 'problem');
+        flow.addQuery('definition', 'CONTAINS', campo);
+        flow.query();
+        var countFlow = 0;
+        while (flow.next()) {
+            countFlow++;
+            gs.print('  🔄 Flow Designer: ' + flow.name);
+        }
+        if (countFlow == 0) gs.print('  ✅ Ningún Flow activa cambios sobre el campo.');
+
+        gs.print('--------------------------------------------------------------');
+    });
+
+    gs.print('\n✅ Diagnóstico extendido completado. Revisa la salida del log.');
+})();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
